@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Readymag용 3D 모델</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const canvas = document.getElementById('canvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+
+    const scene = new THREE.Scene();
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 1.5, 6);
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+    directionalLight.position.set(5, 10, 7);
+    scene.add(ambientLight, directionalLight);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.rotateSpeed = 1.0;
+    controls.zoomSpeed = 0.8;
+    controls.enableZoom = true;
+    controls.enableRotate = true;
+    controls.enablePan = false;
+
+    const fixedTarget = new THREE.Vector3(-0.79, -1.368, -0.67);
+    controls.target.copy(fixedTarget);
+    controls.update();
+
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.PAN,
+      RIGHT: THREE.MOUSE.ROTATE
+    };
+
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.button === 1) {
+        controls.enableRotate = false;
+        controls.enablePan = true;
+      }
+    });
+
+    canvas.addEventListener('pointerup', (e) => {
+      if (e.button === 1) {
+        controls.enablePan = false;
+        controls.enableRotate = true;
+        controls.target.copy(fixedTarget);
+        controls.update();
+      }
+    });
+
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    let modelRoot = null;
+    let mixer = null;
+
+    const loader = new GLTFLoader();
+    loader.load(
+  'box.glb',
+  (gltf) => {
+    const model = gltf.scene;
+
+    const box = new THREE.Box3().setFromObject(model);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    model.position.sub(center);
+
+    model.scale.set(1.5, 1.5, 1.5);
+    model.rotation.x = Math.PI / 2;
+
+    model.traverse((child) => {
+      if (child.isMesh) {
+        child.userData.untouchable = true;
+      }
+    });
+
+    scene.add(model);
+    modelRoot = model;
+
+    if (gltf.animations.length > 0) {
+      mixer = new THREE.AnimationMixer(model);
+      const clip = gltf.animations[0];
+      const action = mixer.clipAction(clip);
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+      action.play();
+    }
+
+    animate();
+  },
+  undefined,
+  (error) => {
+    console.error('모델 로딩 에러:', error);
+  }
+);
+
+    canvas.addEventListener('pointerdown', (event) => {
+      const rect = canvas.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(pointer, camera);
+      const intersects = raycaster.intersectObjects(
+        scene.children.filter((obj) => !obj.userData?.untouchable),
+        true
+      );
+
+      if (intersects.length > 0) {
+        console.log('배경 클릭됨:', intersects[0].point);
+      }
+    });
+
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      if (mixer) mixer.update(delta);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
